@@ -2,14 +2,25 @@ from typing import TypedDict
 from langgraph.graph import StateGraph, START, END
 from classifier import classify_email
 from priority import get_priority
+from summarizer import summarizer
 
 class EmailState(TypedDict):
     sender: str
     subject: str
     body: str
+    summary: str
     category: str
     priority: str
 
+def summarize_email_text(state:EmailState):
+    text = f"""
+    subject: {state['subject']}
+    {state['body']}"""
+
+    summary = summarizer.summarize(text)
+    return {
+        "summary": summary
+    }
 
 
 def classify_node(state: EmailState):
@@ -23,10 +34,12 @@ def classify_node(state: EmailState):
 builder = StateGraph(EmailState)
 
 builder.add_node("classifier",classify_node)
+builder.add_node("summary",summarize_email_text)
 builder.add_node("priority", get_priority)
 
 builder.add_edge(START, "classifier")
-builder.add_edge("classifier","priority")
+builder.add_edge("classifier","summary")
+builder.add_edge("summary","priority")
 builder.add_edge("priority", END)
 
 graph = builder.compile()
