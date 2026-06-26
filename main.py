@@ -4,6 +4,8 @@ from classifier import classify_email
 from priority import get_priority
 from summarizer import summarizer
 from reply import reply
+from hitl import human_intervention
+from routing import approval_router
 
 class EmailState(TypedDict):
     sender: str
@@ -53,12 +55,32 @@ def route_after_priority(state:EmailState):
     
     return END
 
+def send_email(state):
+    print("SEND_EMAIL")
+    print(state["draft_reply"])
+    return state
+
+def edit_reply(state):
+    print("EDIT_REPLY")
+    print("User edited the reply.")
+    return {
+        "draft_reply": state["decision"]["edited_reply"]
+    }
+
+def regenerate_reply(state):
+    print("REGENERATING_THE_REPLY")
+    return state
+
 builder = StateGraph(EmailState)
 
 builder.add_node("classifier",classify_node)
 builder.add_node("summary",summarize_email_text)
 builder.add_node("priority", get_priority)
 builder.add_node("reply_generator",reply_node)
+builder.add_node("human_intervention",human_intervention)
+builder.add_node("send_email",send_email)
+builder.add_node("edit_reply",edit_reply)
+builder.add_node("regenerate_reply", regenerate_reply)
 
 builder.add_edge(START, "classifier")
 builder.add_edge("classifier","summary")
@@ -70,8 +92,19 @@ builder.add_conditional_edges(
 )
 builder.add_edge(
     "reply_generator",
-    END
+    "human_intervention"
 )
+
+builder.add_conditional_edges(
+    "human_intervention",
+    approval_router
+)
+builder.add_edge("send_email", END)
+builder.add_edge("edit_reply", END)
+builder.add_edge("regenerate_reply", "reply_generator")
+
+
+
 
 graph = builder.compile()
 
