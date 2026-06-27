@@ -1,11 +1,21 @@
 from typing import TypedDict
 from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.memory import InMemorySaver
+from langchain_core.runnables import RunnableConfig
+from typing_extensions import TypedDict,NotRequired
+from langgraph.types import Command
+
 from classifier import classify_email
 from priority import get_priority
 from summarizer import summarizer
 from reply import reply
 from hitl import human_intervention
 from routing import approval_router
+
+
+class Decision(TypedDict):
+    action: str
+    edit_reply: NotRequired[str]
 
 class EmailState(TypedDict):
     sender: str
@@ -16,6 +26,7 @@ class EmailState(TypedDict):
     priority: str
     generate_reply: bool
     draft_reply: str
+    decision: Decision
 
 def summarize_email_text(state:EmailState):
     text = f"""
@@ -64,12 +75,13 @@ def edit_reply(state):
     print("EDIT_REPLY")
     print("User edited the reply.")
     return {
-        "draft_reply": state["decision"]["edited_reply"]
+        "draft_reply": state["decision"]["edit_reply"]
     }
 
 def regenerate_reply(state):
     print("REGENERATING_THE_REPLY")
     return state
+
 
 builder = StateGraph(EmailState)
 
@@ -104,9 +116,15 @@ builder.add_edge("edit_reply", END)
 builder.add_edge("regenerate_reply", "reply_generator")
 
 
+checkpointer =InMemorySaver() 
 
+graph = builder.compile(checkpointer=checkpointer)
 
-graph = builder.compile()
+config = {
+    "configurable":{
+        "thread_id": "1"
+    }
+}
 
 result = graph.invoke(
     {
@@ -115,7 +133,47 @@ result = graph.invoke(
         "body":
         """Hey there, One thing that helped me a lot when practicing LeetCode was making sure I practiced like I play. And honestly, this is one of the biggest mistakes people make with coding interview prep. You can do as many problems as you want. But if you don't emulate a real coding interview, you're going to struggle when you're actually thrown into that environment.
         """,
-        "generate_reply": True
-    }
+        "generate_reply": True,
+    },
+    config=config
 )
 print(result)
+
+tracking = graph.get_state(config)
+print(tracking)
+
+print("===============================================================================================================================================================================================")
+
+result = graph.invoke(
+    Command(
+        resume={
+            "action":"edit",
+            "edit_reply":"Hi, Thank you for your email."
+        }
+    ),
+    config=config
+)
+print(result)
+
+graph.update_state(
+    config,
+    {
+        "priority": "LOW"
+    }
+)
+
+graph.update_state(
+    config,
+    {
+        "summary":"This is just an advertisement."
+    }
+)
+state = graph.get_state(config)
+print(state.values["priority"])
+print(state.values["summary"])
+print(state.values["sender"])
+
+history = graph.get_state_history(config)
+print(history)
+
+
